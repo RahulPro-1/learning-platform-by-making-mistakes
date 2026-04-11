@@ -1,0 +1,11 @@
+{
+  "users": [
+    {
+      "id": "0b92b988-1d25-4678-b0e7-40ca2620a17e",
+      "username": "rahul_coder",
+      "email": "rahul1465161718@gmail.com",
+      "password": "$2a$10$/lXoqGA4UJHuGDdV.xZD9e9SZ179fgy1B8ypCvneGou4dMybDsqWa",
+      "createdAt": "2026-04-11T06:20:55.722Z"
+    }
+  ]
+}
