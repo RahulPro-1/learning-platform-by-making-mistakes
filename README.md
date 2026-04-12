@@ -42,7 +42,7 @@ npm install
 
 Create a `.env` file (copy from `.env.example`):
 ```
-ANTHROPIC_API_KEY=sk-ant-your-key-here
+Gemini_API_KEY=sk-ant-your-key-here
 PORT=5000
 ```
 
@@ -89,9 +89,9 @@ Open **http://localhost:5173** in your browser.
 
 **Supported languages:** `python`, `c`, `cpp`
 
-## Getting an Anthropic API Key
+## Getting an Gemini API Key
 
-1. Go to https://console.anthropic.com
-2. Sign up / log in
-3. Navigate to API Keys and create a new key
-4. Paste it into your `.env` file
+1.Go to Google AI Studio Visit: https://aistudio.google.com/
+2.Sign in Login using your Google account
+3.Open API Keys Section Click on your profile icon (top right) Select "Get API key" or go to API Keys section
+4.Create a New API Key Click on "Create API Key" Copy the generated key
