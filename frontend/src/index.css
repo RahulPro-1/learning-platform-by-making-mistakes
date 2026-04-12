@@ -312,6 +312,36 @@ html, body, #root {
 .run-terminal-err { color: #ff7b72; border-color: rgba(224,92,92,0.2); }
 .run-terminal-empty { color: var(--text-muted); font-style: italic; }
 
+/* Stdin echo — user input shown inline, highlighted in cyan */
+.terminal-stdin-echo {
+  color: #79c0ff;
+  font-weight: 600;
+}
+
+/* Legend row above the terminal */
+.run-section-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0 4px;
+}
+.run-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 3px;
+}
+.legend-out { background: #c9d1d9; }
+.legend-in  { background: #79c0ff; }
+
 /* ===== Analyze Button ===== */
 .analyze-btn {
   display: flex;

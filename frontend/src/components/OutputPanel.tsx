@@ -10,6 +10,70 @@ interface Props {
   realtimeEnabled: boolean;
   runResult: RunResult | null;
   runLoading: boolean;
+  stdin: string;
+}
+
+// ─── Terminal simulator ───────────────────────────────────────────────────────
+// When code runs with piped stdin, all prompts appear concatenated in stdout
+// with no echo of user input. This function reconstructs the interleaved
+// terminal view: prompt → user input → next prompt → user input → output.
+//
+// Algorithm:
+//   1. Split stdin into individual input lines (one per scanf/input() call).
+//   2. Walk through stdout; when a "prompt pattern" is detected (text ending
+//      with `:` or `?` followed by whitespace), mark it as a prompt and
+//      attach the next stdin token right after it.
+//   3. Everything after all stdin tokens are consumed is pure program output.
+
+interface TSegment { kind: 'out' | 'in'; text: string; }
+
+function simulateTerminal(stdout: string, stdinStr: string): TSegment[] {
+  const plain: TSegment[] = [{ kind: 'out', text: stdout }];
+  if (!stdout) return plain;
+
+  // Normalise Windows CRLF → LF for consistent processing
+  const normalised = stdout.replace(/\r\n/g, '\n');
+
+  // Parse stdin into individual input tokens (one per newline)
+  const inputs = stdinStr
+    .split('\n')
+    .map(l => l.replace(/\r$/, ''));            // strip trailing \r
+  // Remove trailing blank lines but keep internal blank lines
+  while (inputs.length && inputs[inputs.length - 1] === '') inputs.pop();
+
+  if (!inputs.length) return [{ kind: 'out', text: normalised }];
+
+  const segments: TSegment[] = [];
+  let remaining = normalised;
+  let idx = 0;
+
+  // PROMPT_RE: matches text up to the first `:` or `?` that is followed by
+  // a space/tab (inline prompt like "Enter x: ") OR by a newline
+  // (block prompt like "Enter elements:\n"). Non-greedy so we always catch
+  // the EARLIEST prompt boundary in the remaining stdout.
+  const PROMPT_RE = /^([\s\S]*?[:\?])([ \t]+|\n)/;
+
+  while (idx < inputs.length && remaining.length > 0) {
+    const m = PROMPT_RE.exec(remaining);
+    if (!m) break;                 // no more prompt patterns — rest is output
+
+    const fullMatch  = m[0];      // prompt + separator (e.g. "Enter number: ")
+
+    // Output the prompt (including its separator)
+    segments.push({ kind: 'out', text: fullMatch });
+
+    // Echo the user's input after the prompt, then move to new line
+    // (whether the separator was space or newline, input goes on a new line)
+    segments.push({ kind: 'in', text: inputs[idx] + '\n' });
+
+    idx++;
+    remaining = remaining.slice(fullMatch.length);
+  }
+
+  // Append any remaining stdout (the real program output after all reads)
+  if (remaining) segments.push({ kind: 'out', text: remaining });
+
+  return segments;
 }
 
 const TYPE_BADGE: Record<string, string> = {
@@ -71,7 +135,15 @@ function ErrorCard({ err }: { err: CompilerError }) {
   );
 }
 
-function RunOutputPanel({ runResult, runLoading }: { runResult: RunResult | null; runLoading: boolean }) {
+function RunOutputPanel({
+  runResult,
+  runLoading,
+  stdin,
+}: {
+  runResult: RunResult | null;
+  runLoading: boolean;
+  stdin: string;
+}) {
   if (runLoading) {
     return (
       <div className="run-output-card">
@@ -89,10 +161,14 @@ function RunOutputPanel({ runResult, runLoading }: { runResult: RunResult | null
 
   let statusIcon = '🟢';
   let statusText = `Exited with code ${exitCode}`;
-  if (timedOut)        { statusIcon = '⏱️'; statusText = 'Timed out (8 s limit)'; }
+  if (timedOut)             { statusIcon = '⏱️'; statusText = 'Timed out (10 s limit)'; }
   else if (compilerMissing) { statusIcon = '⚠️'; statusText = 'Compiler not found on this machine'; }
   else if (compileError)    { statusIcon = '🔴'; statusText = 'Compilation failed'; }
   else if (exitCode !== 0)  { statusIcon = '🔴'; statusText = `Exited with code ${exitCode}`; }
+
+  // Build interactive terminal view: interleave stdout prompts with stdin echoes
+  const hasInteractiveInput = stdin.trim().length > 0 && stdout.trim().length > 0;
+  const segments = hasInteractiveInput ? simulateTerminal(stdout, stdin) : null;
 
   return (
     <div className="run-output-card">
@@ -102,13 +178,35 @@ function RunOutputPanel({ runResult, runLoading }: { runResult: RunResult | null
         <span className="run-status">{statusIcon} {statusText}</span>
       </div>
 
-      {stdout && (
+      {/* Interactive terminal view — prompts interleaved with stdin echoes */}
+      {segments && (
         <div className="run-section">
-          <p className="run-section-label">stdout</p>
-          <pre className="run-terminal">{stdout}</pre>
+          <div className="run-section-label-row">
+            <p className="run-section-label">terminal</p>
+            <span className="run-legend">
+              <span className="legend-dot legend-out" /> program output
+              <span className="legend-dot legend-in" /> your input
+            </span>
+          </div>
+          <pre className="run-terminal">
+            {segments.map((seg, i) =>
+              seg.kind === 'in'
+                ? <span key={i} className="terminal-stdin-echo">{seg.text}</span>
+                : <span key={i}>{seg.text}</span>
+            )}
+          </pre>
         </div>
       )}
 
+      {/* Fallback: plain stdout when no stdin was provided */}
+      {!segments && stdout && (
+        <div className="run-section">
+          <p className="run-section-label">stdout</p>
+          <pre className="run-terminal">{stdout.replace(/\r\n/g, '\n')}</pre>
+        </div>
+      )}
+
+      {/* stderr always shown separately */}
       {stderr && (
         <div className="run-section">
           <p className="run-section-label run-section-err">stderr</p>
@@ -123,7 +221,7 @@ function RunOutputPanel({ runResult, runLoading }: { runResult: RunResult | null
   );
 }
 
-function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeChecking, realtimeEnabled, runResult, runLoading }: Props) {
+function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeChecking, realtimeEnabled, runResult, runLoading, stdin }: Props) {
   if (loading) {
     return (
       <div className="output-state">
@@ -152,7 +250,7 @@ function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeCheckin
   if (!result) {
     return (
       <div className="output-state-idle">
-        <RunOutputPanel runResult={runResult} runLoading={runLoading} />
+        <RunOutputPanel runResult={runResult} runLoading={runLoading} stdin={stdin} />
         {realtimeEnabled && realtimeErrors.length > 0 ? (
           <>
             <p className="realtime-header">
@@ -185,7 +283,7 @@ function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeCheckin
 
   return (
     <div className="output-results">
-      <RunOutputPanel runResult={runResult} runLoading={runLoading} />
+      <RunOutputPanel runResult={runResult} runLoading={runLoading} stdin={stdin} />
 
       {result.aiUnavailable && (
         <div className="ai-unavailable-notice">

@@ -236,6 +236,7 @@ function App() {
                 realtimeEnabled={realtimeOn}
                 runResult={runResult}
                 runLoading={runLoading}
+                stdin={stdin}
               />
             ) : (
               <PracticePanel

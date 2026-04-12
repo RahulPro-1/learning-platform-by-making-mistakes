@@ -157,24 +157,65 @@ const checkCode = async (code, language) => {
 // ─── Run code and capture output ─────────────────────────────────────────────
 
 /** Execute a shell command with optional stdin piped in. */
-const runWithStdin = (cmd, stdin = '', timeoutMs = 8000) =>
+/**
+ * Run a shell command, piping stdin via a temp file for reliable cross-platform
+ * EOF delivery. Using file redirection (< file) guarantees the child process
+ * receives EOF immediately after all input — fixes the Windows spawn pipe issue
+ * where child.stdin.end() does not always deliver EOF to scanf / input().
+ *
+ * @param {string} cmd        — full shell command string
+ * @param {string} stdin      — data to pipe in (may be empty)
+ * @param {number} timeoutMs
+ */
+const spawnWithStdin = (cmd, stdin = '', timeoutMs = 10000) =>
   new Promise((resolve) => {
+    let stdinFile = null;
+    let fullCmd;
+
+    if (stdin) {
+      // Write provided input to a temp file and redirect it in
+      stdinFile = require('path').join(os.tmpdir(), `cla_stdin_${Date.now()}.txt`);
+      fs.writeFileSync(stdinFile, stdin, 'utf-8');
+      fullCmd = `${cmd} < "${stdinFile}"`;
+    } else {
+      // No stdin provided — redirect from NUL (Windows) or /dev/null (Linux/Mac)
+      // This sends immediate EOF so scanf/input() don't block
+      const nullDev = IS_WINDOWS ? 'NUL' : '/dev/null';
+      fullCmd = `${cmd} < ${nullDev}`;
+    }
+
+    let stdout   = '';
+    let stderr   = '';
+    let timedOut = false;
+    let done     = false;
+
     const child = require('child_process').exec(
-      cmd,
-      { timeout: timeoutMs, windowsHide: true },
-      (err, stdout, stderr) => {
+      fullCmd,
+      { timeout: timeoutMs, windowsHide: true, shell: true },
+      (err, out, err2) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        // err.killed = true when exec timeout fires
+        if (err?.killed) timedOut = true;
         resolve({
-          stdout: stdout || '',
-          stderr: stderr || '',
+          stdout: out || '',
+          stderr: err2 || '',
           exitCode: err ? (err.code ?? 1) : 0,
-          timedOut: err?.killed ?? false,
+          timedOut,
         });
       }
     );
-    if (stdin && child.stdin) {
-      child.stdin.write(stdin);
-      child.stdin.end();
-    }
+
+    const timer = setTimeout(() => {
+      if (done) return;
+      timedOut = true;
+      try { child.kill(); } catch {}
+    }, timeoutMs + 500); // slight buffer beyond exec's own timeout
+
+    child.on('close', () => {
+      try { fs.unlinkSync(stdinFile); } catch {}
+    });
   });
 
 /**
@@ -185,18 +226,28 @@ const runWithStdin = (cmd, stdin = '', timeoutMs = 8000) =>
  * @returns {{ stdout, stderr, exitCode, timedOut, compileError, compilerMissing }}
  */
 const runCode = async (code, language, stdin = '') => {
+  const TIMEOUT_MS = 10000; // 10 seconds
+
+  // ── Python ────────────────────────────────────────────────────────────────
   if (language === 'python') {
     const { filePath, cleanup } = createTempFile(code, 'py');
-    const cmds = IS_WINDOWS
-      ? [`python "${filePath}"`]
-      : [`python3 "${filePath}"`, `python "${filePath}"`];
+
+    // Try python3 first (Linux/Mac), then python (Windows)
+    const interpreters = IS_WINDOWS ? ['python'] : ['python3', 'python'];
 
     try {
-      for (const cmd of cmds) {
-        const result = await runWithStdin(cmd, stdin);
+      for (const interp of interpreters) {
+        const result = await spawnWithStdin(`${interp} "${filePath}"`, stdin, TIMEOUT_MS);
+
         if (result.timedOut) {
-          return { stdout: '', stderr: 'Execution timed out (8 s limit).', exitCode: 1, timedOut: true };
+          return {
+            stdout: result.stdout,
+            stderr: 'Execution timed out (10 s limit). If your program reads input with input(), make sure to fill in the "Program Input" box below the editor.',
+            exitCode: 1, timedOut: true,
+          };
         }
+
+        // Skip "command not found" errors and try next interpreter
         const combined = result.stdout + result.stderr;
         if (combined || result.exitCode === 0) {
           return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode, timedOut: false };
@@ -208,12 +259,12 @@ const runCode = async (code, language, stdin = '') => {
     }
   }
 
-  // C / C++
-  const ext     = language === 'cpp' ? 'cpp' : 'c';
+  // ── C / C++ ───────────────────────────────────────────────────────────────
+  const ext      = language === 'cpp' ? 'cpp' : 'c';
   const compiler = language === 'cpp' ? 'g++' : 'gcc';
-  const flags   = language === 'cpp' ? '-std=c++17' : '';
+  const flags    = language === 'cpp' ? '-std=c++17 -Wall' : '-Wall';
   const { filePath, cleanup } = createTempFile(code, ext);
-  const outPath = filePath.replace(/\.\w+$/, IS_WINDOWS ? '.exe' : '.out');
+  const outPath  = filePath.replace(/\.\w+$/, IS_WINDOWS ? '.exe' : '.out');
 
   try {
     // Step 1: compile
@@ -228,11 +279,17 @@ const runCode = async (code, language, stdin = '') => {
       };
     }
 
-    // Step 2: execute
-    const execResult = await runWithStdin(`"${outPath}"`, stdin);
+    // Step 2: execute — use shell redirect so stdin EOF is delivered reliably
+    const execResult = await spawnWithStdin(`"${outPath}"`, stdin, TIMEOUT_MS);
+
     if (execResult.timedOut) {
-      return { stdout: '', stderr: 'Execution timed out (8 s limit).', exitCode: 1, timedOut: true };
+      return {
+        stdout: execResult.stdout,
+        stderr: 'Execution timed out (10 s limit). If your program reads input with scanf, make sure to fill in the "Program Input" box below the editor.',
+        exitCode: 1, timedOut: true,
+      };
     }
+
     return {
       stdout: execResult.stdout,
       stderr: execResult.stderr,

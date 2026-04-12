@@ -1,13 +1,13 @@
 {
   "0b92b988-1d25-4678-b0e7-40ca2620a17e": {
-    "analysesCount": 13,
+    "analysesCount": 16,
     "languagesUsed": [
       "c"
     ],
     "practiceCompleted": [],
-    "streak": 1,
-    "lastActive": "2026-04-11",
-    "totalErrorsFound": 15,
+    "streak": 2,
+    "lastActive": "2026-04-12",
+    "totalErrorsFound": 22,
     "level": "intermediate"
   }
 }
