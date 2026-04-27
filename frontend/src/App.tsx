@@ -12,7 +12,7 @@ import { useAuth } from './hooks/useAuth';
 import { useRealtimeCheck } from './hooks/useRealtimeCheck';
 import { analyzeCode, runCode } from './api/analyze';
 import { updateProgress } from './api/progress';
-import { Language, Difficulty, AnalysisResult, RunResult } from './types';
+import { Language, Difficulty, AnalysisResult, RunResult, CompilerError } from './types';
 
 const DEFAULT_CODE: Record<Language, string> = {
   python: `# Write your Python code here
@@ -55,6 +55,15 @@ function App() {
   const [realtimeOn, setRealtimeOn] = useState(true);
   const [showAuth, setShowAuth]     = useState(false);
   const [completedPractice, setCompletedPractice] = useState<string[]>([]);
+  const [highlightedError, setHighlightedError] = useState<CompilerError | null>(null);
+  const [pinnedErrorLines, setPinnedErrorLines] = useState<number[]>([]);
+
+  const handleErrorClick = useCallback((err: CompilerError) => {
+    setHighlightedError(err);
+    if (err.line) {
+      setPinnedErrorLines(prev => prev.includes(err.line!) ? prev : [...prev, err.line!]);
+    }
+  }, []);
 
   const { realtimeErrors, isChecking: isRealtimeChecking } =
     useRealtimeCheck(code, language, realtimeOn);
@@ -99,10 +108,14 @@ function App() {
     if (!code.trim()) return;
     setRunLoading(true);
     setRunResult(null);
+    setResult(null);
     setSideTab('output');
     try {
       const data = await runCode(code, language, stdin);
       setRunResult(data);
+      if (!data.compileError && !data.timedOut && data.exitCode === 0) {
+        setPinnedErrorLines([]);
+      }
     } catch {
       setRunResult({ stdout: '', stderr: 'Could not connect to the server.', exitCode: 1, timedOut: false, compileError: false, compilerMissing: false });
     } finally {
@@ -187,6 +200,8 @@ function App() {
               language={language}
               realtimeErrors={realtimeErrors}
               onChange={setCode}
+              highlightedError={highlightedError}
+              pinnedErrorLines={pinnedErrorLines}
             />
           </div>
 
@@ -237,6 +252,7 @@ function App() {
                 runResult={runResult}
                 runLoading={runLoading}
                 stdin={stdin}
+                onErrorClick={handleErrorClick}
               />
             ) : (
               <PracticePanel

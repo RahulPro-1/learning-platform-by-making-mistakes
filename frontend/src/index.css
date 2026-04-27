@@ -945,6 +945,16 @@ html, body, #root {
 
 @keyframes blink { 50% { opacity: 0.4; } }
 
+.more-errors-hint {
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
 .compiler-missing-badge {
   font-size: 10px;
   padding: 2px 7px;
@@ -1294,6 +1304,17 @@ html, body, #root {
   content: '●';
   color: var(--accent-red);
   font-size: 10px;
+}
+
+/* ===== Monaco pinned error highlight (permanent red until run succeeds) ===== */
+.error-pinned-highlight {
+  background: rgba(224, 92, 92, 0.22) !important;
+  border-left: 2px solid rgba(224, 92, 92, 0.8);
+}
+.error-pinned-glyph::before {
+  content: '●';
+  color: var(--accent-red, #e05c5c);
+  font-size: 11px;
 }
 
 /* ===== Responsive ===== */

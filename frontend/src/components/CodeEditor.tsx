@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useEffect } from 'react';
 import Editor, { OnMount } from '@monaco-editor/react';
 import { Language, CompilerError } from '../types';
 import type * as Monaco from 'monaco-editor';
@@ -8,6 +8,8 @@ interface Props {
   language: Language;
   realtimeErrors: CompilerError[];
   onChange: (value: string) => void;
+  highlightedError?: CompilerError | null;
+  pinnedErrorLines?: number[];
 }
 
 const MONACO_LANGUAGE: Record<Language, string> = {
@@ -16,15 +18,47 @@ const MONACO_LANGUAGE: Record<Language, string> = {
   cpp: 'cpp',
 };
 
-function CodeEditor({ code, language, realtimeErrors, onChange }: Props) {
+function CodeEditor({ code, language, realtimeErrors, onChange, highlightedError, pinnedErrorLines }: Props) {
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
   const decorationsRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
+  const pinnedDecRef = useRef<Monaco.editor.IEditorDecorationsCollection | null>(null);
 
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
   };
+
+  // Scroll to and focus the clicked error's line
+  useEffect(() => {
+    if (!highlightedError?.line || !editorRef.current) return;
+    const editor = editorRef.current;
+    editor.revealLineInCenter(highlightedError.line);
+    editor.setPosition({ lineNumber: highlightedError.line, column: highlightedError.column ?? 1 });
+    editor.focus();
+  }, [highlightedError]);
+
+  // Permanent red highlight for all pinned error lines — cleared when run succeeds
+  useEffect(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+
+    const decorations: Monaco.editor.IModelDeltaDecoration[] = (pinnedErrorLines ?? []).map(line => ({
+      range: new monaco.Range(line, 1, line, 1),
+      options: {
+        isWholeLine: true,
+        className: 'error-pinned-highlight',
+        glyphMarginClassName: 'error-pinned-glyph',
+      },
+    }));
+
+    if (pinnedDecRef.current) {
+      pinnedDecRef.current.set(decorations);
+    } else if (decorations.length > 0) {
+      pinnedDecRef.current = editor.createDecorationsCollection(decorations);
+    }
+  }, [pinnedErrorLines]);
 
   // Apply error squiggles whenever realtimeErrors changes
   if (editorRef.current && monacoRef.current) {

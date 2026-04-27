@@ -11,6 +11,7 @@ interface Props {
   runResult: RunResult | null;
   runLoading: boolean;
   stdin: string;
+  onErrorClick?: (err: CompilerError) => void;
 }
 
 // ─── Terminal simulator ───────────────────────────────────────────────────────
@@ -88,18 +89,23 @@ const TYPE_LABEL: Record<string, string> = {
   'ai-detected':'Logic',
 };
 
-function ErrorCard({ err }: { err: CompilerError }) {
+function ErrorCard({ err, onErrorClick }: { err: CompilerError; onErrorClick?: (err: CompilerError) => void }) {
   const [open, setOpen] = useState(false);
 
+  const handleClick = () => {
+    setOpen((o) => !o);
+    if (err.line) onErrorClick?.(err);
+  };
+
   return (
-    <li className="error-card" onClick={() => setOpen((o) => !o)}>
+    <li className="error-card" onClick={handleClick}>
       <div className="error-card-header">
         <div className="error-card-left">
           <span className={`err-badge ${TYPE_BADGE[err.type] ?? 'badge-error'}`}>
             {TYPE_LABEL[err.type] ?? err.type}
           </span>
           {err.line && <span className="err-line">Line {err.line}</span>}
-          <span className="err-raw">{err.raw}</span>
+          <span className="err-raw">{err.errorName || err.raw}</span>
         </div>
         <span className="err-toggle">{open ? '▲' : '▼'}</span>
       </div>
@@ -221,7 +227,7 @@ function RunOutputPanel({
   );
 }
 
-function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeChecking, realtimeEnabled, runResult, runLoading, stdin }: Props) {
+function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeChecking, realtimeEnabled, runResult, runLoading, stdin, onErrorClick }: Props) {
   if (loading) {
     return (
       <div className="output-state">
@@ -230,7 +236,7 @@ function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeCheckin
           <div className="pulse-circle" />
           <div className="pulse-circle" />
         </div>
-        <p className="state-text">Analyzing your code with AI...</p>
+        <p className="state-text">Analyzing your code...</p>
         <p className="state-subtext">This usually takes a few seconds</p>
       </div>
     );
@@ -258,7 +264,12 @@ function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeCheckin
               Live check — {realtimeErrors.length} issue{realtimeErrors.length !== 1 ? 's' : ''} found
             </p>
             <ul className="error-list">
-              {realtimeErrors.map((e, i) => <ErrorCard key={i} err={e} />)}
+              <ErrorCard err={realtimeErrors[0]} onErrorClick={onErrorClick} />
+              {realtimeErrors.length > 1 && (
+                <li className="more-errors-hint">
+                  +{realtimeErrors.length - 1} more issue{realtimeErrors.length - 1 > 1 ? 's' : ''} — fix the one above first
+                </li>
+              )}
             </ul>
           </>
         ) : (
@@ -308,9 +319,12 @@ function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeCheckin
 
         {hasErrors ? (
           <ul className="error-list">
-            {result.compilerErrors.map((e, i) => (
-              <ErrorCard key={i} err={e} />
-            ))}
+            <ErrorCard err={result.compilerErrors[0]} onErrorClick={onErrorClick} />
+            {result.compilerErrors.length > 1 && (
+              <li className="more-errors-hint">
+                +{result.compilerErrors.length - 1} more error{result.compilerErrors.length - 1 > 1 ? 's' : ''} — fix the one above first, then re-analyze
+              </li>
+            )}
           </ul>
         ) : (
           <p className="result-text success-msg">
@@ -319,13 +333,13 @@ function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeCheckin
         )}
       </div>
 
-      {/* Explanation */}
+      {/* Explanation / Error Analysis */}
       <div className="result-card card-info">
         <div className="card-header">
-          <span className="card-icon">💡</span>
-          <h3 className="card-title">What Your Code Does</h3>
+          <span className="card-icon">{hasErrors ? '🔍' : '✅'}</span>
+          <h3 className="card-title">{hasErrors ? 'Error Analysis' : 'Code Check Result'}</h3>
         </div>
-        <p className="result-text">{result.explanation}</p>
+        <p className="result-text" style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit' }}>{result.explanation}</p>
       </div>
 
       {/* Hints */}
@@ -333,7 +347,7 @@ function OutputPanel({ result, realtimeErrors, error, loading, isRealtimeCheckin
         <div className="result-card card-hint">
           <div className="card-header">
             <span className="card-icon">🎯</span>
-            <h3 className="card-title">Tips to Improve</h3>
+            <h3 className="card-title">{hasErrors ? 'Next Steps' : 'Tips to Improve'}</h3>
           </div>
           <ul className="result-list">
             {result.hints.map((hint, i) => (

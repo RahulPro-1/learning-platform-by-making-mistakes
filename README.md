@@ -1,97 +1,156 @@
-# Beginner Code Learning Assistant
+# Learning by Making Mistakes
 
-A full-stack web app that helps 1st-year CS students write and understand C, C++, and Python code using AI-powered analysis.
+A web app I built as my college major project. The idea is simple — beginners write C, C++, or Python code, the compiler runs, and instead of showing the raw confusing error message, the app explains what went wrong in plain English and tells you exactly how to fix it.
 
-## Project Structure
+No AI API is used. Everything runs locally.
+
+---
+
+## What it does
+
+- You write code in the editor (Monaco — same editor as VS Code)
+- It checks your code in real-time as you type
+- When you click Analyze, it shows:
+  - The **exact line** where the error is
+  - A clear explanation of what went wrong
+  - A hint on how to fix it
+  - A small before/after fix example
+- You can also **run** your code and see the output
+- There are **practice questions** with broken code to fix
+- Users can **register and login** — progress is saved
+
+The error analysis is fully local. I wrote pattern-matching rules for 50+ common beginner errors in C/C++ and Python. It catches things like:
+- Missing semicolons (and shows the correct line, not the next one)
+- Missing `#include` when you use `printf` or `scanf`
+- Missing opening or closing quotes
+- Wrong data types for undeclared variables
+- Missing parentheses, braces, etc.
+
+---
+
+## Project structure
 
 ```
-major_project/
-├── backend/                  # Node.js + Express
+learning-platform-by-making-mistakes/
+├── backend/
 │   ├── src/
 │   │   ├── controllers/
-│   │   │   └── analyzeController.js   # AI analysis logic
+│   │   │   ├── analyzeController.js    # main logic — error analysis, run code
+│   │   │   ├── authController.js       # register, login
+│   │   │   └── progressController.js   # save and load progress
 │   │   ├── routes/
-│   │   │   └── analyzeRoutes.js       # API route definitions
-│   │   └── index.js                   # Express server entry
-│   ├── .env.example
+│   │   │   ├── analyzeRoutes.js
+│   │   │   ├── authRoutes.js
+│   │   │   ├── progressRoutes.js
+│   │   │   └── practiceRoutes.js
+│   │   ├── services/
+│   │   │   └── compilerService.js      # runs gcc / g++ / python
+│   │   ├── utils/
+│   │   │   ├── errorParser.js          # parses gcc and python output
+│   │   │   └── beginnerHints.js        # maps error patterns to hints
+│   │   └── data/
+│   │       ├── practiceQuestions.js
+│   │       ├── samplePrograms.js
+│   │       └── users.json
+│   ├── .env
 │   └── package.json
 │
-└── frontend/                 # React + TypeScript + Vite
+└── frontend/
     ├── src/
     │   ├── components/
+    │   │   ├── CodeEditor.tsx
+    │   │   ├── OutputPanel.tsx
     │   │   ├── Header.tsx
-    │   │   ├── CodeEditor.tsx         # Monaco Editor wrapper
-    │   │   ├── LanguageSelector.tsx   # C / C++ / Python switcher
-    │   │   └── OutputPanel.tsx        # Shows errors, explanation, hints
+    │   │   ├── LanguageSelector.tsx
+    │   │   ├── DifficultySelector.tsx
+    │   │   ├── PracticePanel.tsx
+    │   │   ├── SamplePicker.tsx
+    │   │   ├── ProgressBar.tsx
+    │   │   └── AuthModal.tsx
+    │   ├── hooks/
+    │   │   ├── useRealtimeCheck.ts
+    │   │   └── useAuth.ts
+    │   ├── api/
+    │   │   ├── analyze.ts
+    │   │   ├── auth.ts
+    │   │   ├── practice.ts
+    │   │   ├── progress.ts
+    │   │   └── client.ts
     │   ├── App.tsx
     │   ├── types.ts
-    │   ├── main.tsx
     │   └── index.css
-    ├── index.html
     └── package.json
 ```
 
-## Setup Instructions
+---
 
-### Step 1 — Backend
+## How to run it
 
+You need **Node.js**, **GCC** (for C/C++), and **Python 3** installed on your machine.
+
+**Backend** — open a terminal:
 ```bash
 cd backend
 npm install
+npm run dev
 ```
 
-Create a `.env` file (copy from `.env.example`):
+Create a `.env` file inside `backend/`:
 ```
-Gemini_API_KEY=sk-ant-your-key-here
+JWT_SECRET=write-any-random-string-here
 PORT=5000
 ```
 
-Start the backend:
-```bash
-npm run dev     # development (auto-restarts)
-# or
-npm start       # production
-```
-
-### Step 2 — Frontend
-
+**Frontend** — open another terminal:
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Open **http://localhost:5173** in your browser.
+Then open `http://localhost:5173` in your browser.
+
+Backend runs on port 5000, frontend on port 5173.
+
+---
 
 ## API
 
-### POST /api/analyze
+Three main endpoints:
 
-**Request:**
+**POST /api/analyze** — runs the compiler and returns structured error info with hints  
+**POST /api/check** — quick compiler check used for real-time detection while typing  
+**POST /api/run** — compiles and runs the code, returns stdout/stderr
+
+Request body for all three:
 ```json
 {
-  "code": "print('Hello')",
-  "language": "python"
+  "code": "your code here",
+  "language": "c",
+  "difficulty": "basic"
 }
 ```
 
-**Response:**
-```json
-{
-  "errors": ["No errors found! Great job!"],
-  "explanation": "This code prints the word Hello to the screen.",
-  "hints": [
-    "Try adding more print statements to explore output.",
-    "You can print variables too, like: name = 'Alice'; print(name)"
-  ]
-}
-```
+`language` can be `c`, `cpp`, or `python`.  
+`difficulty` can be `basic`, `intermediate`, or `advanced`.
 
-**Supported languages:** `python`, `c`, `cpp`
+For `/run` you can also pass `"stdin"` for programs that need user input.
 
-## Getting an Gemini API Key
+There are also auth endpoints (`/api/auth/register`, `/api/auth/login`) and progress endpoints (`/api/progress`).
 
-1.Go to Google AI Studio Visit: https://aistudio.google.com/
-2.Sign in Login using your Google account
-3.Open API Keys Section Click on your profile icon (top right) Select "Get API key" or go to API Keys section
-4.Create a New API Key Click on "Create API Key" Copy the generated key
+---
+
+## Tech used
+
+Backend: Node.js, Express, JWT, bcryptjs  
+Frontend: React, TypeScript, Vite, Monaco Editor, Axios  
+No database — users are stored in a JSON file for simplicity
+
+---
+
+## Notes
+
+- GCC must be installed and available in PATH for C/C++ to work. On Windows install MinGW.
+- Python must be in PATH for Python to work.
+- If you get a CORS error, make sure the backend is running before opening the frontend.
+- Run `npm install` and `npm run dev` from inside `backend/` or `frontend/` — not from the root folder.
