@@ -247,21 +247,29 @@ const enrichMissingFunctionName = (err, codeLines) => {
  */
 const enrichMissingOpenParen = (err, codeLines) => {
   if (err.line === null) return null;
+
+  // Only trigger when compiler specifically hints this case
+  if (!/expected\s*';'\s*before\s*string/i.test(err.raw)) return null;
+
   const codeLine = codeLines[err.line - 1] || '';
 
-  // Pattern: a word directly followed by " with no ( between them
-  if (!/\b\w+\s*"/.test(codeLine)) return null;
-  if (/\bchar\b/.test(codeLine))    return null; // skip char declarations
+  // function name directly followed by " WITHOUT (
+  if (!/\b\w+"\s*/.test(codeLine)) return null;
 
-  const match  = codeLine.match(/\b(\w+)\s*"/);
+  // ensure '(' is NOT present before "
+  if (/\b\w+\s*\(.*"/.test(codeLine)) return null;
+
+  if (/\bchar\b/.test(codeLine)) return null;
+
+  const match  = codeLine.match(/\b(\w+)"/);
   const fnName = match ? match[1] : 'printf';
 
   return {
     ...err,
     errorName:    'Missing Opening Parenthesis',
-    explanation:  `You forgot the opening \`(\` after \`${fnName}\`. The compiler sees the string and gets confused.`,
-    hint:         `Add \`(\` after \`${fnName}\` on line ${err.line}. Function calls must have parentheses: \`${fnName}(...)\`.`,
-    whyItHappens: 'Every function call in C must have parentheses. Without `(`, the compiler does not know you are calling a function.',
+    explanation:  `You forgot the opening \`(\` after \`${fnName}\`.`,
+    hint:         `Add \`(\` after \`${fnName}\` on line ${err.line}.`,
+    whyItHappens: 'Function calls in C must use parentheses.',
     miniFixExample: `${fnName}"..."  →  ${fnName}("...")`,
   };
 };
@@ -285,28 +293,31 @@ const enrichMissingSemicolon = (err, codeLines) => {
   const prevLine = (codeLines[lineNum - 2] || '').trim();
   if (!prevLine) return err;
 
-  // Lines that legitimately don't end with a semicolon — don't touch them
   const validEnding   = /[;{},]$/.test(prevLine);
   const isComment     = prevLine.startsWith('//') || prevLine.startsWith('/*') || prevLine.endsWith('*/');
   const isPreproc     = prevLine.startsWith('#');
-  // Only skip control-flow keywords — NOT function calls like printf(...) which DO need ;
   const isControlFlow = /^(if|else\s*if|for|while|switch|do|else)\b/.test(prevLine);
+  const isReturn      = /^return\b/.test(prevLine);
 
-  if (validEnding || isComment || isPreproc || isControlFlow) return err;
+  if (validEnding || isComment || isPreproc || isControlFlow || isReturn) return err;
 
-  // The previous line is a statement missing its semicolon — correct the line number
-  const correctedLine = lineNum - 1;
-
-  const shortPrev = prevLine.length <= 40
-    ? prevLine
-    : prevLine.slice(0, 38) + '…';
+  // Extra detection for missing semicolon after function call
+  if (prevLine.endsWith(')') && !prevLine.endsWith(');')) {
+    return {
+      ...err,
+      line: lineNum - 1,
+      explanation: `Missing semicolon at end of line ${lineNum - 1}.`,
+      hint: `Add \`;\` at end of line ${lineNum - 1}.`,
+      miniFixExample: `${prevLine}  →  ${prevLine};`,
+    };
+  }
 
   return {
     ...err,
-    line:           correctedLine,
-    explanation:    `You are missing a semicolon \`;\` at the end of line ${correctedLine}. Every statement in C must end with a semicolon.`,
-    hint:           `Add \`;\` at the very end of line ${correctedLine}.`,
-    miniFixExample: `${shortPrev}  →  ${shortPrev};`,
+    line: lineNum - 1,
+    explanation: `Missing semicolon at end of line ${lineNum - 1}.`,
+    hint: `Add \`;\` at end of line ${lineNum - 1}.`,
+    miniFixExample: `${prevLine}  →  ${prevLine};`,
   };
 };
 
@@ -315,33 +326,33 @@ const enrichMissingSemicolon = (err, codeLines) => {
 const enrichErrors = (compilerErrors, code) => {
   const codeLines = code.split('\n');
 
-  // Pass 1 — detect and collapse "missing opening quote" scenarios
   const pass1 = fixMissingOpeningQuote(compilerErrors, codeLines);
 
-  // Pass 2 — improve individual error messages
   return pass1.map((err) => {
 
-    // "Variable Not Declared" might actually be:
-    //   a) missing #include (printf undeclared)  b) real undeclared variable
     if (err.errorName === 'Variable Not Declared') {
       return enrichUndeclaredVariable(err, codeLines);
     }
 
-    // Explicit implicit-declaration warning → targeted include hint
     if (err.errorName === 'Function Used Without Including Header') {
       return enrichImplicitDeclaration(err);
     }
 
     if (err.errorName === 'Missing Semicolon') {
-      // "Expected ';' before string constant" may be a missing '(' e.g. printf"Hello")
-      const improvedParen = enrichMissingOpenParen(err, codeLines);
-      if (improvedParen) return improvedParen;
 
-      // Otherwise fix the line number — GCC reports on the NEXT line, not the actual one
-      return enrichMissingSemicolon(err, codeLines);
+      // ✅ FIRST fix semicolon correctly
+      const semicolonFix = enrichMissingSemicolon(err, codeLines);
+
+      // ✅ THEN check if it's actually missing '('
+      const parenFix = enrichMissingOpenParen(err, codeLines);
+
+      if (parenFix && /string constant/i.test(err.raw)) {
+        return parenFix;
+      }
+
+      return semicolonFix;
     }
 
-    // Comma-expression warnings: student forgot the function name entirely
     if (/comma\s+expression|statement\s+has\s+no\s+effect|left-hand\s+operand/i.test(err.raw)) {
       return enrichMissingFunctionName(err, codeLines);
     }
@@ -349,7 +360,6 @@ const enrichErrors = (compilerErrors, code) => {
     return err;
   });
 };
-
 // ─── Local error analysis (no API) ───────────────────────────────────────────
 
 const getPatternEntry = (errorName) =>
@@ -487,3 +497,4 @@ const runCodeHandler = async (req, res) => {
 };
 
 module.exports = { analyzeCode, checkCodeRealtime, runCodeHandler };
+
