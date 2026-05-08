@@ -92,7 +92,7 @@ You need **Node.js**, **GCC** (for C/C++), and **Python 3** installed on your ma
 ```bash
 cd backend
 npm install
-npm run dev
+npm satrt
 ```
 
 Create a `.env` file inside `backend/`:
